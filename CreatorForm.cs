@@ -229,7 +229,7 @@ namespace PortableExecutable
                 Path.GetTempPath() + @"\temp.7z"
             };
 
-            CombineMultipleFilesIntoSingleFile(fileNames, Path.GetTempPath() + @"\" + compiledFileName);
+            CompileExecutable(fileNames, Path.GetTempPath() + @"\" + compiledFileName);
 
             File.Move(Path.GetTempPath() + @"\" + compiledFileName, fileOutput.Text);
 
@@ -262,7 +262,7 @@ namespace PortableExecutable
             SetActive(true);
         }
 
-        private static void CombineMultipleFilesIntoSingleFile(string[] inputFilePaths, string outputFilePath)
+        private static void CompileExecutable(string[] inputFilePaths, string outputFilePath)
         {
             Console.WriteLine("Number of files: {0}.", inputFilePaths.Length);
             using (var outputStream = File.Create(outputFilePath))
