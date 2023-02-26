@@ -66,6 +66,15 @@ namespace PortableExecutable
             // Disable elements
             SetActive(false);
 
+            // Ensure 7-Zip is installed
+            if (!File.Exists(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\7-Zip\\7z.exe"))
+            {
+                progressBar.Style = ProgressBarStyle.Blocks;
+                MessageBox.Show("7-Zip is not installed!\nEnsure 7-Zip is installed in your Program Files directory and try again.", "Dependency Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                SetActive(true);
+                return;
+            }
+
             // Validate input
             if (conversionFolder.Text == "" || conversionFolder.Text == " ")
             {
@@ -176,6 +185,12 @@ namespace PortableExecutable
             }
 
             progressBar.Value = 1;
+
+            try
+            {
+                File.Delete(Path.GetTempPath() + "temp.7z");
+            }
+            catch { }
 
             // Create archive
             ProcessStartInfo createArchiveInfo = new ProcessStartInfo();

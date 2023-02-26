@@ -1,2 +1,2 @@
 # Portable Executable Creator
-A portable executable (self-extracting installer) creator.
+A simple portable executable (self-extracting installer) creator.
