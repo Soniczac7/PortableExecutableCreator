@@ -15,6 +15,8 @@
     <PackageReadmeFile>README.MD</PackageReadmeFile>
     <RepositoryUrl>https://github.com/Soniczac7/PortableExecutableCreator</RepositoryUrl>
     <NeutralLanguage>en-GB</NeutralLanguage>
+    <AssemblyVersion>1.1.0.0</AssemblyVersion>
+    <FileVersion>1.1.0.0</FileVersion>
   </PropertyGroup>
 
   <ItemGroup>
