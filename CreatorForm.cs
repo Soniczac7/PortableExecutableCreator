@@ -1,5 +1,7 @@
+using PortableExecutable.Properties;
 using System.Diagnostics;
 using System.Reflection;
+using static PortableExecutable.BetterProgressBar;
 
 namespace PortableExecutable
 {
@@ -8,7 +10,28 @@ namespace PortableExecutable
         public CreatorForm()
         {
             InitializeComponent();
+
+            DesktopWindowManager.SetImmersiveDarkMode(this.Handle, true);
+            DesktopWindowManager.EnableMicaIfSupported(this.Handle);
+            DesktopWindowManager.ExtendFrameIntoClientArea(this.Handle);
+
             compressionLevel.SelectedIndex = 0;
+
+            if (Settings.Default.szDirectory == null || Settings.Default.szDirectory == "")
+            {
+                Debug.WriteLine("archiveDirectory is null or empty! Setting to default. (" + Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + @"\7-Zip\" + ")");
+                Settings.Default.szDirectory = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + @"\7-Zip\";
+                Settings.Default.Save();
+            }
+
+            if (!SettingsForm.CheckSZInstallation(Settings.Default.szDirectory))
+            {
+                MessageBox.Show("No 7-Zip installation exists at specified directory.\nEnter a valid 7-Zip installation and try again.", "Setting Validation Failed", MessageBoxButtons.OK, MessageBoxIcon.Warning);
+
+                // Open settings
+                SettingsForm settings = new SettingsForm();
+                settings.ShowDialog();
+            }
         }
 
         private void browseButton1_Click(object sender, EventArgs e)
@@ -62,14 +85,20 @@ namespace PortableExecutable
         {
             // Set progress bar to marquee
             progressBar.Style = ProgressBarStyle.Marquee;
+            progressBar.MarqueeAnim = true;
+
+            // Reset progress bar state
+            progressBar.Value = 0;
+            progressBar.State = ProgressBarState.Normal;
 
             // Disable elements
             SetActive(false);
 
             // Ensure 7-Zip is installed
-            if (!File.Exists(Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + "\\7-Zip\\7z.exe"))
+            if (!File.Exists(Settings.Default.szDirectory + "7z.exe"))
             {
                 progressBar.Style = ProgressBarStyle.Blocks;
+                progressBar.MarqueeAnim = false;
                 MessageBox.Show("7-Zip is not installed!\nEnsure 7-Zip is installed in your Program Files directory and try again.", "Dependency Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 SetActive(true);
                 return;
@@ -81,6 +110,7 @@ namespace PortableExecutable
                 MessageBox.Show("Folder to convert is blank. Input a folder to convert.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 SetActive(true);
                 progressBar.Style = ProgressBarStyle.Blocks;
+                progressBar.MarqueeAnim = false;
                 return;
             }
 
@@ -89,6 +119,7 @@ namespace PortableExecutable
                 MessageBox.Show("File to execute is blank. Input a file to execute.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 SetActive(true);
                 progressBar.Style = ProgressBarStyle.Blocks;
+                progressBar.MarqueeAnim = false;
                 return;
             }
 
@@ -97,6 +128,7 @@ namespace PortableExecutable
                 MessageBox.Show("Output file is blank. Input a file output location.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 SetActive(true);
                 progressBar.Style = ProgressBarStyle.Blocks;
+                progressBar.MarqueeAnim = false;
                 return;
             }
 
@@ -133,16 +165,45 @@ namespace PortableExecutable
                 MessageBox.Show("Invalid CompressionLevel.", "Internal Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 SetActive(true);
                 progressBar.Style = ProgressBarStyle.Blocks;
+                progressBar.MarqueeAnim = false;
                 return;
+            }
+
+            if (!File.Exists(executeFile.Text))
+            {
+                MessageBox.Show("File to execute does not exist.", "Validation Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
+                SetActive(true);
+                progressBar.Style = ProgressBarStyle.Blocks;
+                progressBar.MarqueeAnim = false;
+                return;
+            }
+
+            if (File.Exists(fileOutput.Text))
+            {
+                DialogResult result = MessageBox.Show("Output file already exists. Overwrite?", "File Exists", MessageBoxButtons.YesNo, MessageBoxIcon.Warning);
+
+                if (result == DialogResult.Yes)
+                {
+                    File.Delete(fileOutput.Text);
+                }
+                else
+                {
+                    SetActive(true);
+                    progressBar.Style = ProgressBarStyle.Blocks;
+                    progressBar.MarqueeAnim = false;
+                    return;
+                }
             }
 
             progressBar.Value = 0;
             progressBar.Style = ProgressBarStyle.Blocks;
+            progressBar.MarqueeAnim = false;
 
             // Setup
             string executeFileName = Path.GetFileName(executeFile.Text);
             string compiledFileName = Path.GetFileName(fileOutput.Text);
             string assemblyPath = Path.GetDirectoryName(Assembly.GetExecutingAssembly().Location);
+            bool doneWithWarnings = false;
 
             // Create config.txt
             string[] configContents;
@@ -178,6 +239,7 @@ namespace PortableExecutable
             }
             catch (Exception ex)
             {
+                progressBar.State -= ProgressBarState.Error;
                 MessageBox.Show("Failed to create configuration file:\n" + ex.Message + " (" + ex.GetType().FullName + ")" + Environment.NewLine + ex.StackTrace, "Configuration Error", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 SetActive(true);
                 progressBar.Value = 0;
@@ -194,7 +256,7 @@ namespace PortableExecutable
 
             // Create archive
             ProcessStartInfo createArchiveInfo = new ProcessStartInfo();
-            createArchiveInfo.FileName = Environment.GetFolderPath(Environment.SpecialFolder.ProgramFiles) + @"\7-Zip\7z.exe";
+            createArchiveInfo.FileName = Settings.Default.szDirectory + "7z.exe";
             createArchiveInfo.Arguments = $"a -mx{((int?)level)} {Path.GetTempPath()}temp.7z \"{conversionFolder.Text}\\*\"";
             createArchiveInfo.UseShellExecute = false;
             createArchiveInfo.CreateNoWindow = true;
@@ -204,8 +266,15 @@ namespace PortableExecutable
             createArchive.Start();
             await createArchive.WaitForExitAsync();
 
-            if (createArchive.ExitCode != 0)
+            if (createArchive.ExitCode == 1)
             {
+                Debug.WriteLine("Received an ExitCode of 1 while creating archive. (Done with warnings)");
+                doneWithWarnings = true;
+                progressBar.State = ProgressBarState.Warning;
+            }
+            else if (createArchive.ExitCode != 0)
+            {
+                progressBar.State -= ProgressBarState.Error;
                 MessageBox.Show($"Received an ExitCode of {createArchive.ExitCode} and expected an ExitCode of 0!", "Error Creating Archive", MessageBoxButtons.OK, MessageBoxIcon.Error);
                 SetActive(true);
                 progressBar.Value = 0;
@@ -257,14 +326,21 @@ namespace PortableExecutable
 
             progressBar.Value = 4;
 
-            MessageBox.Show("Finished making portable executable.", "Compile Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            if (doneWithWarnings)
+            {
+                MessageBox.Show("Finished making portable executable however archive created with warnings, some files may not be compressed or present.", "Compile Success (with warnings)", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
+            else
+            {
+                MessageBox.Show("Finished making portable executable.", "Compile Success", MessageBoxButtons.OK, MessageBoxIcon.Information);
+            }
 
             SetActive(true);
         }
 
         private static void CompileExecutable(string[] inputFilePaths, string outputFilePath)
         {
-            Console.WriteLine("Number of files: {0}.", inputFilePaths.Length);
+            Debug.WriteLine("Number of files: {0}.", inputFilePaths.Length);
             using (var outputStream = File.Create(outputFilePath))
             {
                 foreach (var inputFilePath in inputFilePaths)
@@ -274,7 +350,7 @@ namespace PortableExecutable
                         // Buffer size can be passed as the second argument.
                         inputStream.CopyTo(outputStream);
                     }
-                    Console.WriteLine("The file {0} has been processed.", inputFilePath);
+                    Debug.WriteLine("processed.", inputFilePath);
                 }
             }
         }
@@ -313,6 +389,13 @@ namespace PortableExecutable
                 preExeMessage.Enabled = false;
                 startButton.Enabled = false;
             }
+        }
+
+        private void button1_Click(object sender, EventArgs e)
+        {
+            // Open settings
+            SettingsForm settings = new SettingsForm();
+            settings.ShowDialog();
         }
     }
 }
